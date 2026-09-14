@@ -1,0 +1,23 @@
+[project]
+name = "rock-and-roll-podcast-service"
+version = "0.1.0"
+description = "REST API for a catalogue of rock & roll podcasts"
+requires-python = ">=3.12"
+dependencies = [
+    "alembic>=1.20.0",
+    "fastapi>=0.141.1",
+    "httpx>=0.28.1",
+    "psycopg[binary]>=3.3.5",
+    "pydantic-settings>=2.15.0",
+    "sqlalchemy>=2.0.52",
+    "uvicorn>=0.53.0",
+]
+
+[dependency-groups]
+dev = [
+    "pytest>=9.1.1",
+]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["."]
