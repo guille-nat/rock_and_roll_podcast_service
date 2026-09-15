@@ -46,3 +46,14 @@ class PodcastPage(BaseModel):
     total: int
     limit: int
     offset: int
+
+
+class IngestSummary(BaseModel):
+    """Outcome of an ingestion run. fetched == stored + updated + skipped."""
+
+    fetched: int
+    stored: int
+    updated: int
+    skipped: int
+    # Reason code -> count, e.g. {"duplicate": 13, "missing_title": 1}.
+    skipped_reasons: dict[str, int]
