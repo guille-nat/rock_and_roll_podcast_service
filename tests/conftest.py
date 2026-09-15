@@ -4,15 +4,18 @@ from collections.abc import Iterator
 import pytest
 from alembic import command
 from alembic.config import Config
+from fastapi.testclient import TestClient
 from sqlalchemy import Engine
 from sqlalchemy.engine import make_url
 from sqlalchemy.orm import Session
 
 from app.config import Settings
 
+TEST_API_KEY = "test-api-key"
+
 # Settings are read when the application is imported, so the environment must
 # be in place before any test module imports it.
-os.environ.setdefault("API_KEY", "test-api-key")
+os.environ.setdefault("API_KEY", TEST_API_KEY)
 
 # Tests run against the same server as DATABASE_URL (exported or from .env)
 # but on the podcasts_test database, which the Compose init script creates.
@@ -46,3 +49,20 @@ def db_session(db_engine: Engine) -> Iterator[Session]:
         yield session
         session.close()
         transaction.rollback()
+
+
+@pytest.fixture
+def client(db_session: Session) -> Iterator[TestClient]:
+    """Test client whose database dependency is bound to the rolled-back test session."""
+    from app.db import get_session
+    from app.main import app
+
+    app.dependency_overrides[get_session] = lambda: db_session
+    with TestClient(app) as test_client:
+        yield test_client
+    app.dependency_overrides.clear()
+
+
+@pytest.fixture
+def auth_headers() -> dict[str, str]:
+    return {"X-API-Key": TEST_API_KEY}
