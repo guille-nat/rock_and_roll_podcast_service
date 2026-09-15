@@ -9,3 +9,4 @@ __pycache__/
 # Tooling
 .pytest_cache/
 .claude/settings.local.json
+.mypy_cache/
