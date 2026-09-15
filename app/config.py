@@ -24,6 +24,10 @@ class Settings(BaseSettings):
     itunes_timeout_seconds: float = Field(default=10.0, gt=0)
     fixtures_dir: Path = Path(__file__).resolve().parent.parent / "tests" / "fixtures" / "itunes"
 
+    # Artwork downloads run in a thread pool; each download has its own short timeout.
+    artwork_workers: int = Field(default=8, ge=1, le=64)
+    artwork_timeout_seconds: float = Field(default=5.0, gt=0)
+
 
 @lru_cache
 def get_settings() -> Settings:
