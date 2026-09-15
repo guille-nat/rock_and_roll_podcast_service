@@ -1,0 +1,24 @@
+# Local development only: the credentials below are not secrets.
+services:
+  db:
+    image: postgres:18
+    environment:
+      POSTGRES_USER: podcasts
+      POSTGRES_PASSWORD: podcasts
+      POSTGRES_DB: podcasts
+    ports:
+      # Override POSTGRES_PORT in .env if 5432 is already taken on the host.
+      - "${POSTGRES_PORT:-5432}:5432"
+    volumes:
+      # Postgres 18 images keep data under a versioned subdirectory of this path.
+      - postgres-data:/var/lib/postgresql
+      # Runs only when the data volume is initialised for the first time.
+      - ./docker/postgres/init-test-db.sql:/docker-entrypoint-initdb.d/init-test-db.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U podcasts -d podcasts"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+volumes:
+  postgres-data:
