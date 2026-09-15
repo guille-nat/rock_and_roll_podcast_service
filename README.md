@@ -64,6 +64,66 @@ uv run uvicorn app.main:app --reload
 - Health check: <http://localhost:8000/health>
 - OpenAPI docs: <http://localhost:8000/docs>
 
+If port 8000 is taken, pass `--port 8010` (or any free port) to uvicorn.
+
+## Authentication
+
+Every endpoint except `/health` requires the `X-API-Key` header with the value of `API_KEY`.
+A missing or wrong key returns `401`:
+
+```sh
+curl -i http://localhost:8000/podcasts
+# HTTP/1.1 401 Unauthorized
+# {"error":{"code":"unauthenticated","message":"Missing or invalid API key"}}
+
+curl -H "X-API-Key: $API_KEY" http://localhost:8000/podcasts
+```
+
+In `/docs`, click **Authorize** and paste the key once to try every endpoint from the browser.
+
+## Endpoints
+
+| method | path              | auth | description                                     |
+| ------ | ----------------- | ---- | ----------------------------------------------- |
+| `GET`  | `/health`         | no   | Liveness check.                                 |
+| `GET`  | `/podcasts`       | yes  | Paginated catalogue listing with filters.       |
+| `GET`  | `/podcasts/{id}`  | yes  | One podcast by its own `id` (not the iTunes id). |
+
+`GET /podcasts` query parameters:
+
+| parameter | type   | default | description                                                    |
+| --------- | ------ | ------- | -------------------------------------------------------------- |
+| `genre`   | string | –       | Exact match, case-insensitive (e.g. `music`).                  |
+| `country` | string | –       | Exact match, case-insensitive (e.g. `usa`).                    |
+| `q`       | string | –       | Case-insensitive substring search over `title` and `author`.   |
+| `limit`   | int    | `20`    | Page size, between 1 and 100.                                  |
+| `offset`  | int    | `0`     | Number of rows to skip.                                        |
+
+The response carries the page plus the total number of matches, so clients can compute the
+number of pages:
+
+```json
+{ "items": [ { "id": 1, "source_id": 1001, "title": "...", "...": "..." } ], "total": 3, "limit": 20, "offset": 0 }
+```
+
+Results are ordered by `title`, then `id`, so pages are stable between requests.
+
+## Errors
+
+Every error response, whatever raised it, has the same shape:
+
+```json
+{ "error": { "code": "not_found", "message": "Podcast 999 not found" } }
+```
+
+| status | code               | when                                             |
+| ------ | ------------------ | ------------------------------------------------ |
+| `401`  | `unauthenticated`  | Missing or wrong `X-API-Key`.                    |
+| `404`  | `not_found`        | Unknown podcast id or unknown route.             |
+| `405`  | `method_not_allowed` | Wrong HTTP method on an existing route.        |
+| `422`  | `validation_error` | Invalid query/path parameter or body. `error.details` lists the offending fields. |
+| `502`  | `upstream_error`   | The iTunes API failed during ingestion.          |
+
 ## Run the tests
 
 The tests need the Compose database running. They use the same server as `DATABASE_URL`

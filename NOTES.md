@@ -54,3 +54,72 @@ A single `podcasts` table (`app/models.py`), managed only through Alembic migrat
 - Each test runs inside a transaction that is rolled back, with savepoints so tests can
   commit or trigger integrity errors without affecting each other.
 - `alembic check` is itself a test: a model change without its migration fails the suite.
+
+## Authentication
+
+A single static API key in the `X-API-Key` header, read from `API_KEY` at startup
+(`app/auth.py`).
+
+- **Why not JWT or OAuth.** The service has no users: there is no subject to attribute
+  permissions to and nothing to put in a token's claims. A JWT flow would end up validating
+  against the same shared secret, with token issuing, expiry and refresh as extra moving
+  parts that protect nothing more.
+- **Constant-time comparison.** `secrets.compare_digest` instead of `==`, because string
+  equality returns at the first mismatching byte and that timing difference can be measured
+  to recover the key byte by byte. The comparison runs over bytes since the `str` form only
+  accepts ASCII.
+- **Built on FastAPI's `APIKeyHeader`** with `auto_error=False`: the scheme is declared in
+  OpenAPI (Authorize button in `/docs`) while the missing-header case goes through the
+  service's own 401 instead of FastAPI's default 403.
+- **Enforced per router**, not as middleware, so `/health` stays public by simply not
+  declaring the dependency and the requirement is visible in each router's definition.
+- **An empty key is rejected at startup** (`min_length=1` on the setting); otherwise a
+  request with an empty header would authenticate.
+- **Known limitations.** Rotating the key requires a redeploy, and there is no per-client
+  attribution or revocation. With more than one consumer the next step is a table of hashed
+  keys with creation and revocation timestamps, looked up by a key prefix.
+
+## Errors
+
+One envelope for every error response, produced by three handlers in `app/errors.py`:
+
+- `ApiError` subclasses (`UnauthenticatedError`, `NotFoundError`, `UpstreamError`) carry
+  their status and code as class attributes, so raising one from the business logic is a
+  one-liner and no router needs to know about HTTP status codes.
+- `RequestValidationError` becomes `422 validation_error`. It is the only response that adds
+  `error.details` (Pydantic's error list): a single message cannot describe several invalid
+  fields, and the field/location information is what a client needs to fix the request.
+- Starlette's `HTTPException` is handled too, so an unknown route or a wrong method also
+  returns the envelope instead of FastAPI's default `{"detail": ...}`.
+- The handlers are `async def` on purpose. Starlette invokes them from inside the event loop;
+  a plain `def` handler would be pushed to the thread pool, and building a small JSON body
+  does not justify a thread hop. Endpoints are the opposite case: they run synchronous
+  SQLAlchemy queries, so they are plain `def` and FastAPI runs them in the thread pool.
+- The `type: ignore` comments on `add_exception_handler` are required: Starlette types every
+  handler as accepting a bare `Exception`, although it only dispatches the registered class.
+
+## Read endpoints
+
+`GET /podcasts` and `GET /podcasts/{id}` (`app/routers/podcasts.py`, queries in `app/podcasts.py`).
+
+- **`limit`/`offset` pagination** rather than `page`/`page_size`: it maps directly to SQL and
+  is what most consumers of a small catalogue API expect. `limit` is capped at 100 so a
+  client cannot request the whole table through this endpoint; that is what the export is for.
+- **Stable ordering** by `title`, then `id`. Title alone is not unique and PostgreSQL gives no
+  ordering guarantee without `ORDER BY`, so without the tie-breaker rows could appear on two
+  pages or on none.
+- **`total` comes from a second query** (`count()` over the filtered statement as a subquery).
+  A window function (`count(*) OVER ()`) would do it in one round trip, but it returns no rows
+  when `offset` is past the end, and with it the total is lost. At this scale the second query
+  is simpler and always correct; on a very large table the count would be the first thing to
+  cache or estimate.
+- **Filters:** `genre` and `country` are exact, case-insensitive matches (`lower(column) =
+  lower(value)`), which is what a client picking from known values needs. `q` is a
+  case-insensitive substring search (`ILIKE`) over `title` and `author`, good enough for a
+  catalogue of this size; full-text search (`tsvector`) would be the upgrade if relevance
+  ranking mattered.
+- **The single-podcast endpoint uses the internal `id`**, not the iTunes `source_id`. The
+  ingestion endpoints take the `source_id` because that is what the client knows before the
+  podcast exists locally; the read endpoints expose the catalogue's own identity.
+- `/podcasts/export` will be declared before `/{podcast_id}` in the router, otherwise
+  `export` would be parsed as an id and rejected with 422.
