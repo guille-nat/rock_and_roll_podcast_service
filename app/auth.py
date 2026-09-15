@@ -7,10 +7,11 @@ X-API-Key header. Every router except /health declares `require_api_key` as a de
 import secrets
 from typing import Annotated
 
-from fastapi import Depends, HTTPException, Security, status
+from fastapi import Depends, Security
 from fastapi.security import APIKeyHeader
 
 from app.config import Settings, get_settings
+from app.errors import UnauthenticatedError
 
 # auto_error=False: a missing header is handled below so the response uses the
 # service's own error shape. The scheme still shows up in OpenAPI (Authorize button).
@@ -29,7 +30,4 @@ def require_api_key(
     if provided is None or not secrets.compare_digest(
         provided.encode(), expected.encode()
     ):
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Missing or invalid API key",
-        )
+        raise UnauthenticatedError("Missing or invalid API key")

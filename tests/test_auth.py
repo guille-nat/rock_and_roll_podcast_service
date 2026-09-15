@@ -2,6 +2,7 @@ from fastapi import APIRouter, Depends, FastAPI
 from fastapi.testclient import TestClient
 
 from app.auth import require_api_key
+from app.errors import register_exception_handlers
 from tests.conftest import TEST_API_KEY
 
 # No protected router exists yet, so the dependency is exercised on a throwaway app.
@@ -15,6 +16,7 @@ def protected() -> dict[str, bool]:
 
 
 _app = FastAPI()
+register_exception_handlers(_app)
 _app.include_router(_router)
 _client = TestClient(_app)
 
@@ -23,6 +25,9 @@ def test_missing_api_key_returns_401() -> None:
     response = _client.get("/protected")
 
     assert response.status_code == 401
+    assert response.json() == {
+        "error": {"code": "unauthenticated", "message": "Missing or invalid API key"}
+    }
 
 
 def test_wrong_api_key_returns_401() -> None:
