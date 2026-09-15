@@ -27,6 +27,10 @@ cp .env.example .env
 | `API_KEY`       | yes      | Shared secret expected in the `X-API-Key` header.                           |
 | `DATABASE_URL`  | yes      | SQLAlchemy URL, e.g. `postgresql+psycopg://user:pass@host:5432/db`.         |
 | `POSTGRES_PORT` | no       | Host port published by the Compose database (default `5432`). Keep it in sync with `DATABASE_URL`. |
+| `INGEST_SOURCE` | no       | `itunes` (default) or `fixtures`. See [Run the ingestion](#run-the-ingestion).   |
+| `ITUNES_TIMEOUT_SECONDS` | no | Per-request timeout against iTunes (default `10`).                        |
+| `ARTWORK_WORKERS` | no     | Concurrent artwork downloads (default `8`).                                 |
+| `ARTWORK_TIMEOUT_SECONDS` | no | Per-image download timeout (default `5`).                                |
 
 The service refuses to start if `API_KEY` or `DATABASE_URL` is missing or empty.
 
@@ -83,11 +87,13 @@ In `/docs`, click **Authorize** and paste the key once to try every endpoint fro
 
 ## Endpoints
 
-| method | path              | auth | description                                     |
-| ------ | ----------------- | ---- | ----------------------------------------------- |
-| `GET`  | `/health`         | no   | Liveness check.                                 |
-| `GET`  | `/podcasts`       | yes  | Paginated catalogue listing with filters.       |
-| `GET`  | `/podcasts/{id}`  | yes  | One podcast by its own `id` (not the iTunes id). |
+| method | path                   | auth | description                                              |
+| ------ | ---------------------- | ---- | -------------------------------------------------------- |
+| `GET`  | `/health`              | no   | Liveness check.                                          |
+| `POST` | `/ingest/bulk`         | yes  | Fetch the rock & roll batch from iTunes and store it.    |
+| `POST` | `/ingest/{source_id}`  | yes  | Ingest one podcast by its iTunes `collectionId`.         |
+| `GET`  | `/podcasts`            | yes  | Paginated catalogue listing with filters.                |
+| `GET`  | `/podcasts/{id}`       | yes  | One podcast by its own `id` (not the iTunes id).         |
 
 `GET /podcasts` query parameters:
 
@@ -108,6 +114,55 @@ number of pages:
 
 Results are ordered by `title`, then `id`, so pages are stable between requests.
 
+## Run the ingestion
+
+The catalogue starts empty. Fill it with one request (no body needed):
+
+```sh
+curl -X POST -H "X-API-Key: $API_KEY" http://localhost:8000/ingest/bulk
+```
+
+This queries the iTunes Search API for seven terms (`rock`, `rock and roll`, `classic rock`,
+`punk rock`, `hard rock`, `metal`, `indie rock`), merges the results, stores them and
+downloads every cover image to extract a colour palette. It takes around 15 seconds on the
+first run and returns a summary:
+
+```json
+{
+  "fetched": 527,
+  "stored": 492,
+  "updated": 0,
+  "skipped": 35,
+  "skipped_reasons": { "duplicate": 35 }
+}
+```
+
+- `fetched` is the number of raw records received across all terms.
+- `stored` and `updated` are new and existing podcasts (matched by iTunes id).
+- `skipped` records are counted by reason: `duplicate` (same podcast under several
+  terms), `missing_title`, `missing_author`, `missing_source_id`, `invalid_<field>`.
+- `fetched == stored + updated + skipped` always holds.
+
+The ingestion is idempotent: run it again and every podcast is updated in place
+(`stored: 0`). Skipped records are also logged with their reason.
+
+To ingest a single podcast, pass its iTunes `collectionId`:
+
+```sh
+curl -X POST -H "X-API-Key: $API_KEY" http://localhost:8000/ingest/1187775077
+```
+
+An unknown id returns `404`. If iTunes is unreachable after the retries, both endpoints
+return `502`.
+
+### Without network access
+
+Set `INGEST_SOURCE=fixtures` in `.env` (and restart the API) to replay the iTunes responses
+stored under `tests/fixtures/itunes/` instead of calling the live API. The same two endpoints
+work unchanged; the fixtures contain 261 records (248 unique podcasts). Artwork is still
+downloaded from the URLs in the fixtures; when that fails, the podcast is stored with
+`color_palette: null`.
+
 ## Errors
 
 Every error response, whatever raised it, has the same shape:
@@ -122,7 +177,7 @@ Every error response, whatever raised it, has the same shape:
 | `404`  | `not_found`        | Unknown podcast id or unknown route.             |
 | `405`  | `method_not_allowed` | Wrong HTTP method on an existing route.        |
 | `422`  | `validation_error` | Invalid query/path parameter or body. `error.details` lists the offending fields. |
-| `502`  | `upstream_error`   | The iTunes API failed during ingestion.          |
+| `502`  | `upstream_error`   | The iTunes API failed during ingestion (after retries). |
 
 ## Run the tests
 
