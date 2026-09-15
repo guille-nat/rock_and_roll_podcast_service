@@ -51,7 +51,10 @@ def upsert_podcasts(session: Session, records: list[PodcastIn]) -> tuple[int, in
     """
     inserted = 0
     updated = 0
-    for batch in batched(records, UPSERT_BATCH_SIZE):
+    # Lock rows in a consistent order: two concurrent ingestions upserting the same
+    # podcasts in different orders could otherwise deadlock each other.
+    ordered = sorted(records, key=lambda record: record.source_id)
+    for batch in batched(ordered, UPSERT_BATCH_SIZE):
         stmt = insert(Podcast).values([record.model_dump() for record in batch])
         stmt = stmt.on_conflict_do_update(
             index_elements=[Podcast.source_id],
