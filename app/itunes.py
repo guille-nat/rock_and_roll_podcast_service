@@ -94,29 +94,41 @@ class ITunesClient:
             raise UpstreamError("iTunes returned a body that is not JSON") from exc
 
 
+def fixture_slug(term: str) -> str:
+    """File-name slug for a search term: the only naming convention the fixtures rely on."""
+    return term.replace(" ", "_")
+
+
 class FixtureSource:
-    """Replays iTunes responses stored under tests/fixtures/itunes (no network)."""
+    """Replays iTunes responses stored under tests/fixtures/itunes (no network).
+
+    Every fixture is loaded once at construction: `search_<slug>.json` files are indexed
+    by slug and every record in them (plus any `lookup_<id>.json`) by collectionId, so
+    lookups are dictionary hits instead of repeated file scans.
+    """
 
     def __init__(self, directory: Path) -> None:
-        self._directory = directory
+        self._searches: dict[str, list[RawPodcast]] = {}
+        self._by_id: dict[int, RawPodcast] = {}
+        for path in sorted(directory.glob("*.json")):
+            results = _results(json.loads(path.read_text(encoding="utf-8")))
+            if path.stem.startswith("search_"):
+                self._searches[path.stem.removeprefix("search_")] = results
+            for record in results:
+                collection_id = record.get("collectionId")
+                if isinstance(collection_id, int):
+                    self._by_id.setdefault(collection_id, record)
+        if not self._searches:
+            raise UpstreamError(f"No search fixtures found in {directory}")
 
     def search(self, term: str) -> list[RawPodcast]:
-        path = self._directory / f"search_{term.replace(' ', '_')}.json"
-        if not path.exists():
-            raise UpstreamError(f"No fixture for search term {term!r} at {path}")
-        return _results(json.loads(path.read_text(encoding="utf-8")))
+        try:
+            return self._searches[fixture_slug(term)]
+        except KeyError:
+            raise UpstreamError(f"No fixture for search term {term!r}") from None
 
     def lookup(self, source_id: int) -> RawPodcast | None:
-        path = self._directory / f"lookup_{source_id}.json"
-        if path.exists():
-            results = _results(json.loads(path.read_text(encoding="utf-8")))
-            return results[0] if results else None
-        # Fall back to scanning the search fixtures, so any fixture podcast can be looked up.
-        for search_file in sorted(self._directory.glob("search_*.json")):
-            for record in _results(json.loads(search_file.read_text(encoding="utf-8"))):
-                if record.get("collectionId") == source_id:
-                    return record
-        return None
+        return self._by_id.get(source_id)
 
 
 def _results(data: Any) -> list[RawPodcast]:

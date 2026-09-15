@@ -111,3 +111,8 @@ def test_fixture_source_reads_search_and_lookup() -> None:
 def test_fixture_source_missing_term_is_upstream_error() -> None:
     with pytest.raises(UpstreamError, match="No fixture"):
         FixtureSource(FIXTURES).search("polka")
+
+
+def test_fixture_source_empty_directory_is_upstream_error(tmp_path: Path) -> None:
+    with pytest.raises(UpstreamError, match="No search fixtures"):
+        FixtureSource(tmp_path)
