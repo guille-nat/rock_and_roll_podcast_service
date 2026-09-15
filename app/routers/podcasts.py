@@ -1,13 +1,15 @@
 """Read endpoints for the podcast catalogue."""
 
+from collections.abc import Iterator
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, Query
+from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
 
 from app import catalogue
 from app.auth import require_api_key
-from app.db import get_session
+from app.db import SessionFactory, get_session, get_session_factory
 from app.catalogue import PodcastFilters
 from app.schemas import ErrorResponse, PodcastOut, PodcastPage
 
@@ -43,8 +45,33 @@ def list_podcasts(
     )
 
 
-# NOTE: /podcasts/export (streaming) must be declared before /{podcast_id}, otherwise
-# "export" would be matched as a podcast id and rejected with 422.
+def _ndjson_lines(session_factory: SessionFactory) -> Iterator[bytes]:
+    """One JSON object per line. Runs after the endpoint has returned, while streaming.
+
+    The session is opened and closed here, inside the generator, so it lives exactly as
+    long as the stream does. A session from a `Depends` would be tied to the request
+    lifecycle instead, which has changed between FastAPI versions.
+    """
+    with session_factory() as session:
+        for podcast in catalogue.iter_podcasts(session):
+            yield PodcastOut.model_validate(podcast).model_dump_json().encode() + b"\n"
+
+
+# Declared before /{podcast_id}: otherwise "export" would be parsed as an id and rejected.
+@router.get(
+    "/export",
+    response_class=StreamingResponse,
+    responses={200: {"content": {"application/x-ndjson": {}}, "description": "NDJSON stream"}},
+)
+def export_podcasts(
+    session_factory: Annotated[SessionFactory, Depends(get_session_factory)],
+) -> StreamingResponse:
+    """Stream the whole catalogue as NDJSON, one podcast per line."""
+    return StreamingResponse(
+        _ndjson_lines(session_factory),
+        media_type="application/x-ndjson",
+        headers={"Content-Disposition": 'attachment; filename="podcasts.ndjson"'},
+    )
 
 
 @router.get("/{podcast_id}", response_model=PodcastOut, responses={404: {"model": ErrorResponse}})

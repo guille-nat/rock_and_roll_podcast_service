@@ -1,5 +1,6 @@
 """Read queries over the podcast catalogue."""
 
+from collections.abc import Iterator
 from dataclasses import dataclass
 
 from sqlalchemy import Select, func, or_, select
@@ -7,6 +8,10 @@ from sqlalchemy.orm import Session
 
 from app.errors import NotFoundError
 from app.models import Podcast
+
+
+# Rows fetched per round trip while streaming the whole catalogue.
+EXPORT_BATCH_SIZE = 1000
 
 
 @dataclass(frozen=True)
@@ -49,3 +54,13 @@ def get_podcast(session: Session, podcast_id: int) -> Podcast:
     if podcast is None:
         raise NotFoundError(f"Podcast {podcast_id} not found")
     return podcast
+
+
+def iter_podcasts(session: Session, batch_size: int = EXPORT_BATCH_SIZE) -> Iterator[Podcast]:
+    """Yield every podcast in id order without loading the whole table.
+
+    yield_per keeps a server-side cursor open and fetches `batch_size` rows at a time,
+    so memory use is bounded by one batch regardless of the catalogue size.
+    """
+    stmt = select(Podcast).order_by(Podcast.id).execution_options(yield_per=batch_size)
+    yield from session.scalars(stmt)
