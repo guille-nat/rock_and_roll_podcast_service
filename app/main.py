@@ -4,7 +4,7 @@ from fastapi import FastAPI
 
 from app.config import get_settings
 from app.errors import register_exception_handlers
-from app.routers import health
+from app.routers import health, podcasts
 
 # Read settings at import time so a missing API_KEY or DATABASE_URL
 # fails the process at startup instead of on the first request.
@@ -17,3 +17,4 @@ app = FastAPI(
 
 register_exception_handlers(app)
 app.include_router(health.router)
+app.include_router(podcasts.router)
