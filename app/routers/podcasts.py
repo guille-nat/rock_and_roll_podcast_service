@@ -5,10 +5,10 @@ from typing import Annotated
 from fastapi import APIRouter, Depends, Query
 from sqlalchemy.orm import Session
 
-from app import podcasts
+from app import catalogue
 from app.auth import require_api_key
 from app.db import get_session
-from app.podcasts import PodcastFilters
+from app.catalogue import PodcastFilters
 from app.schemas import ErrorResponse, PodcastOut, PodcastPage
 
 router = APIRouter(
@@ -34,7 +34,7 @@ def list_podcasts(
     filters: Annotated[PodcastFilters, Depends(podcast_filters)],
     session: Annotated[Session, Depends(get_session)],
 ) -> PodcastPage:
-    items, total = podcasts.list_podcasts(session, filters)
+    items, total = catalogue.list_podcasts(session, filters)
     return PodcastPage(
         items=[PodcastOut.model_validate(item) for item in items],
         total=total,
@@ -52,4 +52,4 @@ def get_podcast(
     podcast_id: int,
     session: Annotated[Session, Depends(get_session)],
 ) -> PodcastOut:
-    return PodcastOut.model_validate(podcasts.get_podcast(session, podcast_id))
+    return PodcastOut.model_validate(catalogue.get_podcast(session, podcast_id))

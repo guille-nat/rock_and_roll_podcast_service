@@ -100,7 +100,7 @@ One envelope for every error response, produced by three handlers in `app/errors
 
 ## Read endpoints
 
-`GET /podcasts` and `GET /podcasts/{id}` (`app/routers/podcasts.py`, queries in `app/podcasts.py`).
+`GET /podcasts` and `GET /podcasts/{id}` (`app/routers/podcasts.py`, queries in `app/catalogue.py`).
 
 - **`limit`/`offset` pagination** rather than `page`/`page_size`: it maps directly to SQL and
   is what most consumers of a small catalogue API expect. `limit` is capped at 100 so a

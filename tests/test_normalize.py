@@ -1,7 +1,7 @@
 import pytest
 from pydantic import ValidationError
 
-from app.normalize import PodcastIn, clean_text, skip_reason, strip_html
+from app.ingestion.normalize import PodcastIn, clean_text, skip_reason, strip_html
 
 RAW = {
     "collectionId": 123,

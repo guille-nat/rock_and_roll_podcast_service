@@ -7,8 +7,8 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app.errors import NotFoundError
-from app.ingest import ingest_bulk, ingest_one, ingest_records
-from app.itunes import FixtureSource
+from app.ingestion.pipeline import ingest_bulk, ingest_one, ingest_records
+from app.ingestion.itunes import FixtureSource
 from app.models import Podcast
 
 FIXTURES = Path(__file__).parent / "fixtures" / "itunes"

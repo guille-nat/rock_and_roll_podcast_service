@@ -6,7 +6,7 @@ import pytest
 from tenacity import wait_none
 
 from app.errors import UpstreamError
-from app.itunes import FixtureSource, ITunesClient
+from app.ingestion.itunes import FixtureSource, ITunesClient
 
 FIXTURES = Path(__file__).parent / "fixtures" / "itunes"
 

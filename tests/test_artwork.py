@@ -6,8 +6,8 @@ from PIL import Image
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.artwork import extract_palette, extract_palettes, fetch_palette
-from app.ingest import ingest_records
+from app.ingestion.artwork import extract_palette, extract_palettes, fetch_palette
+from app.ingestion.pipeline import ingest_records
 from app.models import Podcast
 
 

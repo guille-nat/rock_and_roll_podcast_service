@@ -15,9 +15,9 @@ from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.orm import Session
 
 from app.errors import NotFoundError
-from app.itunes import PodcastSource, RawPodcast
+from app.ingestion.itunes import PodcastSource, RawPodcast
 from app.models import Podcast
-from app.normalize import PodcastIn, skip_reason
+from app.ingestion.normalize import PodcastIn, skip_reason
 from app.schemas import IngestSummary
 
 logger = logging.getLogger(__name__)
