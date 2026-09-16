@@ -93,10 +93,13 @@ def test_single_ingest_unknown_id_returns_404(
     assert response.json()["error"]["code"] == "not_found"
 
 
-def test_single_ingest_rejects_non_numeric_id(
-    client: TestClient, auth_headers: dict[str, str], fixture_source: FixtureSource
+@pytest.mark.parametrize("source_id", ["abc", "-1", "0", str(2**63)])
+def test_single_ingest_rejects_invalid_id_before_calling_the_source(
+    client: TestClient, auth_headers: dict[str, str], source_id: str
 ) -> None:
-    response = client.post("/ingest/abc", headers=auth_headers)
+    _use_source(BrokenSource())
+
+    response = client.post(f"/ingest/{source_id}", headers=auth_headers)
 
     assert response.status_code == 422
     assert response.json()["error"]["code"] == "validation_error"

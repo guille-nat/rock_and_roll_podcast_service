@@ -4,7 +4,7 @@ from collections.abc import Iterator
 from functools import partial
 from typing import Annotated
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Path
 from sqlalchemy.orm import Session
 
 from app.auth import require_api_key
@@ -22,6 +22,10 @@ router = APIRouter(
     dependencies=[Depends(require_api_key)],
     responses={401: {"model": ErrorResponse}, 502: {"model": ErrorResponse}},
 )
+
+# BIGINT maximum, the limit of the source_id column: an id that could never be stored
+# is rejected before reaching the network, instead of coming back as a 400 from iTunes.
+MAX_SOURCE_ID = 2**63 - 1
 
 
 def get_source(settings: Annotated[Settings, Depends(get_settings)]) -> Iterator[PodcastSource]:
@@ -60,7 +64,7 @@ def ingest_bulk(
     responses={404: {"model": ErrorResponse}},
 )
 def ingest_one(
-    source_id: int,
+    source_id: Annotated[int, Path(ge=1, le=MAX_SOURCE_ID)],
     session: Annotated[Session, Depends(get_session)],
     source: Annotated[PodcastSource, Depends(get_source)],
     extractor: Annotated[PaletteExtractor, Depends(get_palette_extractor)],
