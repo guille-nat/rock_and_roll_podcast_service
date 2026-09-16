@@ -2,6 +2,46 @@
 
 Decisions, assumptions and trade-offs. Sections are added as the service grows.
 
+## Architecture overview
+
+```mermaid
+flowchart LR
+    itunes["iTunes Search API"]
+    fixtures[("tests/fixtures/itunes")]
+    cdn["Apple artwork CDN"]
+    subgraph api["FastAPI process"]
+        ingest["POST /ingest/*<br>app/ingestion"]
+        read["GET /podcasts, /podcasts/{id}<br>GET /podcasts/export"]
+    end
+    db[("PostgreSQL<br>podcasts table")]
+    client["API client<br>X-API-Key"]
+
+    itunes -->|search / lookup| ingest
+    fixtures -.->|INGEST_SOURCE=fixtures| ingest
+    cdn -->|cover images| ingest
+    ingest -->|upsert + palettes| db
+    db -->|select| read
+    client --> ingest
+    client --> read
+```
+
+One process, one table. The `podcasts` table holds one row per iTunes podcast, keyed by
+its own `id` and unique on `source_id` (the iTunes `collectionId`), with the text fields,
+the artwork URL, a JSONB colour palette and timestamps. There is no episodes table: the
+Search API returns podcasts, not episodes, and the brief's endpoints only need the podcast.
+
+An ingestion request goes router → `app/ingestion/pipeline.py` → SQLAlchemy. The pipeline
+queries the source for each search term, cleans and validates every record, drops
+duplicates by `source_id`, upserts the rest in one `INSERT ... ON CONFLICT` per batch of 500
+and commits. Then it downloads the covers in a thread pool, extracts a palette from each and
+writes the palettes in a second transaction. The response is the count summary.
+
+A read request goes router → `app/catalogue.py` → SQLAlchemy and back through a Pydantic
+schema. The listing runs two queries (count and page). The export is different: the endpoint
+returns a `StreamingResponse` whose generator opens its own session, iterates the table with
+a server-side cursor (`yield_per=1000`) and writes one JSON line per row, so the session lives
+as long as the stream and memory stays bounded by one batch.
+
 ## Data model
 
 A single `podcasts` table (`app/models.py`), managed only through Alembic migrations.
@@ -132,7 +172,7 @@ One envelope for every error response, produced by four handlers in `app/errors.
 - **The single-podcast endpoint uses the internal `id`**, not the iTunes `source_id`. The
   ingestion endpoints take the `source_id` because that is what the client knows before the
   podcast exists locally; the read endpoints expose the catalogue's own identity.
-- `/podcasts/export` will be declared before `/{podcast_id}` in the router, otherwise
+- `/podcasts/export` is declared before `/{podcast_id}` in the router, otherwise
   `export` would be parsed as an id and rejected with 422.
 
 ## Ingestion
@@ -140,8 +180,8 @@ One envelope for every error response, produced by four handlers in `app/errors.
 `POST /ingest/bulk` and `POST /ingest/{source_id}` (`app/routers/ingest.py`), pipeline in
 `app/ingestion/`.
 
-Flow: fetch across terms → de-duplicate by `collectionId` in memory → validate and normalise
-each record → upsert in batches → download artwork and extract palettes → summary.
+Flow: fetch across terms → validate and normalise each record → de-duplicate on the coerced
+`source_id` in memory → upsert in batches → download artwork and extract palettes → summary.
 
 - **What "rock & roll" means here.** The iTunes Search API returns at most 200 results per
   query and has no offset parameter, so a batch is the union of seven searches: `rock`,
@@ -166,10 +206,13 @@ each record → upsert in batches → download artwork and extract palettes → 
   minutes, and holding hundreds of row locks for that long would block any concurrent
   ingestion. It also gives the brief's guarantee for free: if palette extraction fails
   entirely, the podcasts are already stored.
-- **De-duplication happens in memory, not only in the database.** The same podcast appears
-  under several terms; feeding both copies to one `INSERT ... ON CONFLICT` statement is an
-  error in PostgreSQL ("command cannot affect row a second time"), and counting them as
-  `duplicate` in the summary is useful information about the search terms.
+- **De-duplication happens in memory, after normalisation, not only in the database.** The
+  same podcast appears under several terms; feeding both copies to one
+  `INSERT ... ON CONFLICT` statement is an error in PostgreSQL ("command cannot affect row a
+  second time"), and counting them as `duplicate` in the summary is useful information about
+  the search terms. The key is the `source_id` after Pydantic has coerced it, not the raw
+  `collectionId`: I first keyed on the raw value, and a batch carrying `123` and `"123"` went
+  through as two rows and failed the whole statement.
 - **Validation and normalisation** (`normalize.py`): text fields are passed through a real
   HTML parser, whitespace is trimmed and collapsed, and empty strings become `None`, all
   *before* Pydantic validates `PodcastIn`. A record without `source_id`, `title` or `author`
@@ -226,3 +269,66 @@ each record → upsert in batches → download artwork and extract palettes → 
 - **Artwork is re-downloaded on every ingestion**, even when the URL has not changed. Skipping
   unchanged URLs whose palette is already stored would make re-runs almost free; it needs
   the previous `artwork_url` from the upsert's `RETURNING` and is a straightforward next step.
+
+## Deployment
+
+Nothing is deployed; this is how I would do it.
+
+The image in the `Dockerfile` is the unit of deployment. I would run it on a managed
+container platform (Cloud Run, ECS/Fargate, Fly.io — any of them fits a single stateless
+process) in front of the platform's load balancer with TLS terminated there. PostgreSQL
+would be the provider's managed service, not a container: backups, failover and disk are
+their problem, and the only thing the API needs is a `DATABASE_URL`. `API_KEY` and
+`DATABASE_URL` would live in the platform's secret store and be injected as environment
+variables at start; nothing changes in the code, because settings already come from the
+environment. Rotating the key means updating the secret and restarting.
+
+A new version ships as a new image tag built by CI on the main branch, after `pytest` and
+`mypy` pass. The platform rolls it out and the old revision stays until the new one answers
+`/health`. Rolling back is redeploying the previous tag.
+
+One thing I would change before running more than one replica. Migrations currently run
+on container start (`alembic upgrade head` in the Compose command). With one container that
+is the simplest correct thing; with N replicas starting at once, N processes race to apply
+the same migration. Alembic takes a transaction, so the losers fail rather than corrupt, but
+a failing start is still a bad rollout. The replacement is a one-off migration step in the
+deploy pipeline, run once before the new revision is rolled out, with the container command
+reduced to `uvicorn`.
+
+## Continuous ingestion and scale
+
+Today ingestion is synchronous inside the HTTP request: `POST /ingest/bulk` fetches, upserts,
+downloads ~500 covers and answers in about fifteen seconds. That is fine for a catalogue
+this size and makes the endpoint easy to test, but it is the first thing that has to go.
+
+To ingest continuously I would move the pipeline out of the request path into a worker.
+The request would only enqueue a job and return `202` with a job id; a scheduler would
+enqueue the same job on an interval. The worker runs `ingest_bulk` as it is, because the
+pipeline already takes a session and a source and does not know about HTTP. A queue table
+in PostgreSQL (`SELECT ... FOR UPDATE SKIP LOCKED`) would be enough to start; a broker only
+becomes worth its operational cost when there are many workers or the queue outgrows the
+main database.
+
+To get to millions of episodes the unit of work changes. Episodes come from each podcast's
+RSS feed, so the natural partition is the podcast: one job per feed, fetched with a
+conditional request (`ETag`/`Last-Modified`) so unchanged feeds cost one round trip and no
+parsing. That gives independent, retryable jobs that spread over as many workers as needed.
+On the storage side an `episodes` table keyed by `(podcast_id, guid)` with the same
+`ON CONFLICT` upsert, partitioned by publication date once it is large enough to matter, and
+the listing's `count(*)` replaced by an estimate or a cached figure. Cover download and
+palette extraction stay as they are, but keyed by artwork URL so a cover is processed once
+no matter how many episodes share it.
+
+What leaves the request path in that design: fetching from iTunes and from feeds, image
+processing, and anything that writes in bulk. What stays: the read endpoints, the export
+(already streaming), and a small endpoint to enqueue or inspect jobs.
+
+## AI tool usage
+
+I wrote `CLAUDE.md` — the stack, the scope, the ingestion rules, the review criteria — and
+took the architecture decisions recorded in this file. Claude Code wrote most of the
+implementation and the tests from those instructions, one step at a time. I reviewed every
+block before it went in, asked for changes where I disagreed (the `clock_timestamp()`
+choice for `updated_at`, the commit format, the size of the tests) and made every commit by
+hand. The two review passes that produced the fixes in the last commits were also run with
+Claude Code, against a checklist I wrote.

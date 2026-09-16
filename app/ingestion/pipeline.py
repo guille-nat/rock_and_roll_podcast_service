@@ -1,7 +1,7 @@
 """Ingestion: fetch raw records, normalise them and upsert them into the catalogue.
 
-Flow: fetch across terms -> de-duplicate by source_id in memory -> validate and
-normalise each record -> upsert in batches -> fetch artwork palettes -> report.
+Flow: fetch across terms -> validate and normalise each record -> de-duplicate on the
+coerced source_id in memory -> upsert in batches -> fetch artwork palettes -> report.
 """
 
 import logging
