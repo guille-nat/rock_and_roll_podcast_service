@@ -201,6 +201,12 @@ Flow: fetch across terms → validate and normalise each record → de-duplicate
   (`SEARCH_TERMS` in `pipeline.py`). It is a judgement call, documented and consistent. In
   practice iTunes currently returns 20–100 results per term, about 527 records and 492
   unique podcasts.
+- **The catalogue comes from a single storefront.** The Search API is called without a
+  `country` parameter, so iTunes answers from the US storefront and every ingested podcast
+  has `country = "USA"`. The `country` filter works, but on this catalogue it does not
+  discriminate anything. Passing iTunes' `country` parameter and querying several
+  storefronts is what would diversify it; I left it out because the brief does not ask for
+  it and it multiplies the number of requests per run.
 - **`POST /ingest/{source_id}` trusts the caller.** It ingests whatever `collectionId` it is
   given, rock or not; there is no genre check because iTunes' `primaryGenreName` is `Music`
   for most of the catalogue and would not discriminate anyway.

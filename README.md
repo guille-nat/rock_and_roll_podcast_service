@@ -99,7 +99,7 @@ In `/docs`, click **Authorize** and paste the key once to try every endpoint fro
 | parameter | type   | default | description                                                    |
 | --------- | ------ | ------- | -------------------------------------------------------------- |
 | `genre`   | string | –       | Exact match, case-insensitive (e.g. `music`).                  |
-| `country` | string | –       | Exact match, case-insensitive (e.g. `usa`).                    |
+| `country` | string | –       | Exact match, case-insensitive (e.g. `usa`). The bulk ingestion queries the US storefront only, so every podcast currently has `USA`. |
 | `q`       | string | –       | Case-insensitive substring search over `title` and `author`.   |
 | `limit`   | int    | `20`    | Page size, between 1 and 100.                                  |
 | `offset`  | int    | `0`     | Number of rows to skip.                                        |
