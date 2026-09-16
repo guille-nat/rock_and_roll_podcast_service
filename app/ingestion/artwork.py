@@ -39,16 +39,17 @@ def extract_palette(image_bytes: bytes, colors: int = PALETTE_SIZE) -> list[str]
 
 
 def fetch_palette(client: httpx.Client, url: str) -> list[str] | None:
-    """Download one image and extract its palette; None on any download or decode failure."""
+    """Download one image and extract its palette; None on any failure."""
     try:
         response = client.get(url)
         response.raise_for_status()
         return extract_palette(response.content)
     except httpx.HTTPError as exc:
         logger.warning("Artwork download failed for %s: %s", url, exc)
-    except (OSError, Image.DecompressionBombError) as exc:
-        # UnidentifiedImageError and truncated files surface as OSError from Pillow.
-        logger.warning("Artwork could not be decoded for %s: %s", url, exc)
+    except Exception:
+        # Deliberately broad: a cover that Pillow cannot handle for any reason must not
+        # abort an ingestion whose podcasts are already committed. See NOTES.md.
+        logger.exception("Artwork could not be processed for %s", url)
     return None
 
 

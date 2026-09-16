@@ -201,10 +201,16 @@ each record → upsert in batches → download artwork and extract palettes → 
   full image and it makes quantisation fast and size-independent), then Pillow's
   `quantize(colors=5, method=MEDIANCUT)`. The five palette entries are returned as hex
   strings ordered by pixel frequency, most dominant first.
-- **Every download is guarded individually.** `fetch_palette` catches only `httpx.HTTPError`
-  and Pillow's decode errors (`OSError`, `DecompressionBombError`), logs a warning and
-  returns `None`; the podcast is stored with `color_palette = NULL` and the ingestion
-  continues. No retries: a cover that fails is not worth another round trip.
+- **Every download is guarded individually.** `fetch_palette` catches `httpx.HTTPError`
+  for the download and then a bare `Exception` for the decoding and quantisation, logs it
+  with the URL and returns `None`; the podcast is stored with `color_palette = NULL` and
+  the ingestion continues. No retries: a cover that fails is not worth another round trip.
+- **Why a bare `except Exception` here, against the project rule.** The podcasts are
+  committed before the palettes are fetched, so an exception that escapes one image aborts
+  the request with a 500 and leaves the batch half-processed. Pillow raises more than
+  `OSError` on odd inputs (`ValueError`, `TypeError`, ...) and enumerating them is a losing
+  game. The brief's guarantee — a failing image never aborts the ingestion — is worth more
+  than the precision of the clause; `logger.exception` keeps the traceback server-side.
 - **Known limitation:** median-cut on a cover dominated by one colour returns near-identical
   shades (e.g. `#fbf81f`, `#fbf81d`, `#fcfa2c`). Merging perceptually close colours would
   give a nicer palette; it is cosmetic and left as an improvement.

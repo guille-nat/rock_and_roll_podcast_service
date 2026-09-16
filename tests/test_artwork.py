@@ -2,10 +2,12 @@ from functools import partial
 from io import BytesIO
 
 import httpx
+import pytest
 from PIL import Image
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from app.ingestion import artwork
 from app.ingestion.artwork import extract_palette, extract_palettes, fetch_palette
 from app.ingestion.pipeline import ingest_records
 from app.models import Podcast
@@ -52,6 +54,16 @@ def test_fetch_palette_returns_none_on_timeout() -> None:
 
 def test_fetch_palette_returns_none_when_body_is_not_an_image() -> None:
     transport = httpx.MockTransport(lambda request: httpx.Response(200, content=b"<html>"))
+
+    with httpx.Client(transport=transport) as client:
+        assert fetch_palette(client, "https://example.com/a.jpg") is None
+
+
+def test_fetch_palette_returns_none_on_unexpected_extraction_error(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(artwork, "extract_palette", lambda _: 1 / 0)
+    transport = httpx.MockTransport(lambda request: httpx.Response(200, content=b"img"))
 
     with httpx.Client(transport=transport) as client:
         assert fetch_palette(client, "https://example.com/a.jpg") is None
