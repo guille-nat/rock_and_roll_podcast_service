@@ -4,8 +4,10 @@ REST API for a catalogue of rock & roll podcasts ingested from the iTunes Search
 
 ## Prerequisites
 
-- [Docker](https://docs.docker.com/get-docker/) with Compose. This is all you need to run
-  the service.
+- [Docker](https://docs.docker.com/get-docker/) with BuildKit (Docker 23 or newer) and
+  Compose 2.24 or newer. This is all you need to run the service. The `Dockerfile` uses
+  `RUN --mount=type=cache`, which needs BuildKit, and `compose.yaml` uses the
+  `env_file: path/required` form, which older Compose versions reject.
 - [uv](https://docs.astral.sh/uv/), only to run the API outside Docker, the tests or the
   type checker. It manages the Python interpreter, dependencies and virtual environment:
 
@@ -173,8 +175,10 @@ return `502`.
 
 ### Without network access
 
-Set `INGEST_SOURCE=fixtures` in `.env` (and restart the API) to replay the iTunes responses
-stored under `tests/fixtures/itunes/` instead of calling the live API. The same two endpoints
+Set `INGEST_SOURCE=fixtures` in `.env` to replay the iTunes responses stored under
+`tests/fixtures/itunes/` instead of calling the live API. Then recreate the container with
+`docker compose up -d` (`docker compose restart` does not re-read `.env`), or restart
+`uvicorn` if you run it with uv. The same two endpoints
 work unchanged; the fixtures contain 261 records (248 unique podcasts). Artwork is still
 downloaded from the URLs in the fixtures; when that fails, the podcast is stored with
 `color_palette: null`.

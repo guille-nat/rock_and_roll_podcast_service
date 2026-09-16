@@ -1,6 +1,6 @@
 # Notes
 
-Decisions, assumptions and trade-offs. Sections are added as the service grows.
+Decisions, assumptions and trade-offs.
 
 ## Architecture overview
 
@@ -58,7 +58,9 @@ A single `podcasts` table (`app/models.py`), managed only through Alembic migrat
   `VARCHAR(n)`, and iTunes gives no length guarantees, so a length limit would only add a
   failure mode. The mapping is declared once in `Base.type_annotation_map`.
 - **`color_palette` is `JSONB`**, a list of hex strings. JSONB is the recommended JSON type
-  on PostgreSQL (binary, indexable); `NULL` means the artwork could not be processed.
+  on PostgreSQL (binary, indexable). `NULL` means no palette has been extracted yet: either
+  iTunes returned no artwork URL, or the first download failed. A later failure does not
+  reset it to `NULL`; see the Artwork section.
 - **Timestamps are timezone-aware** (`TIMESTAMP WITH TIME ZONE`), also declared once in
   `Base.type_annotation_map`.
 - **`updated_at` uses `clock_timestamp()` on update, not `now()`.** `now()` is frozen at
@@ -335,10 +337,10 @@ processing, and anything that writes in bulk. What stays: the read endpoints, th
 
 ## AI tool usage
 
-I wrote `CLAUDE.md` — the stack, the scope, the ingestion rules, the review criteria — and
-took the architecture decisions recorded in this file. Claude Code wrote most of the
-implementation and the tests from those instructions, one step at a time. I reviewed every
-block before it went in, asked for changes where I disagreed (the `clock_timestamp()`
-choice for `updated_at`, the commit format, the size of the tests) and made every commit by
-hand. The two review passes that produced the fixes in the last commits were also run with
-Claude Code, against a checklist I wrote.
+The architecture decisions recorded in this file are mine: the stack, the single table, the
+database-level idempotency, the static API key, the streaming export. `CLAUDE.md` and the
+review checklists for the last commits were drafted in conversation with Claude from those
+decisions, and Claude Code wrote most of the implementation and the tests from them, one
+step at a time. I reviewed every block before it went in, asked for changes where I
+disagreed (the `clock_timestamp()` choice for `updated_at`, the commit format, the size of
+the tests) and made every commit by hand.
