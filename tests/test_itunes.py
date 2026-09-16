@@ -59,7 +59,7 @@ def test_client_errors_are_not_retried() -> None:
         return httpx.Response(400, json={})
 
     with closing(_client(httpx.MockTransport(handler))) as client:
-        with pytest.raises(UpstreamError, match="400"):
+        with pytest.raises(UpstreamError, match="rejected the request"):
             client.search("rock")
     assert calls == 1
 
@@ -73,16 +73,19 @@ def test_persistent_timeouts_become_upstream_error() -> None:
         raise httpx.ReadTimeout("slow", request=request)
 
     with closing(_client(httpx.MockTransport(handler))) as client:
-        with pytest.raises(UpstreamError, match="after retries"):
+        with pytest.raises(UpstreamError) as exc_info:
             client.search("rock")
     assert calls == 3
+    # The exception text stays in the log, never in the message that becomes the 502 body.
+    assert exc_info.value.message == "The podcast source is unavailable"
+    assert "slow" not in exc_info.value.message
 
 
 def test_non_json_body_is_upstream_error() -> None:
     transport = httpx.MockTransport(lambda request: httpx.Response(200, text="<html>"))
 
     with closing(_client(transport)) as client:
-        with pytest.raises(UpstreamError, match="not JSON"):
+        with pytest.raises(UpstreamError, match="unreadable response"):
             client.search("rock")
 
 

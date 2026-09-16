@@ -71,7 +71,9 @@ class ITunesClient:
         try:
             return self._get_with_retry(path, params)
         except _RETRYABLE as exc:
-            raise UpstreamError(f"iTunes request failed after retries: {exc}") from exc
+            # The traceback goes to the log; the response body carries a fixed message.
+            logger.exception("iTunes request failed after retries: %s %s", path, params)
+            raise UpstreamError("The podcast source is unavailable") from exc
 
     @retry(
         stop=stop_after_attempt(3),
@@ -84,11 +86,13 @@ class ITunesClient:
         if response.status_code >= 500:
             raise _RetryableStatus(f"iTunes returned {response.status_code}")
         if response.status_code >= 400:
-            raise UpstreamError(f"iTunes returned {response.status_code} for {path}")
+            logger.error("iTunes returned %s for %s %s", response.status_code, path, params)
+            raise UpstreamError("The podcast source rejected the request")
         try:
             return response.json()
         except json.JSONDecodeError as exc:
-            raise UpstreamError("iTunes returned a body that is not JSON") from exc
+            logger.exception("iTunes returned a body that is not JSON for %s %s", path, params)
+            raise UpstreamError("The podcast source returned an unreadable response") from exc
 
 
 def fixture_slug(term: str) -> str:
