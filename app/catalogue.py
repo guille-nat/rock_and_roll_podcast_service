@@ -33,8 +33,16 @@ def _filtered_query(filters: PodcastFilters) -> Select[tuple[Podcast]]:
     if filters.country is not None:
         stmt = stmt.where(func.lower(Podcast.country) == filters.country.lower())
     if filters.q is not None:
-        pattern = f"%{filters.q}%"
-        stmt = stmt.where(or_(Podcast.title.ilike(pattern), Podcast.author.ilike(pattern)))
+        # Backslash first, then the LIKE wildcards, or the added backslashes would be
+        # escaped again. escape="\\" tells PostgreSQL which character we used.
+        escaped = filters.q.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+        pattern = f"%{escaped}%"
+        stmt = stmt.where(
+            or_(
+                Podcast.title.ilike(pattern, escape="\\"),
+                Podcast.author.ilike(pattern, escape="\\"),
+            )
+        )
     return stmt
 
 

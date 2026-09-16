@@ -56,6 +56,29 @@ def test_list_searches_title_and_author(
     assert _titles(response.json()) == ["Beatles Stories", "Metal Talk"]
 
 
+@pytest.mark.parametrize(
+    ("titles", "q", "expected"),
+    [
+        (["50% Off Rock", "500 Songs"], "50%", ["50% Off Rock"]),
+        (["Rock_Talk", "Rock Talk"], "k_T", ["Rock_Talk"]),
+    ],
+)
+def test_list_search_treats_like_wildcards_literally(
+    client: TestClient,
+    auth_headers: dict[str, str],
+    db_session: Session,
+    titles: list[str],
+    q: str,
+    expected: list[str],
+) -> None:
+    db_session.add_all(Podcast(source_id=i, title=t, author="A") for i, t in enumerate(titles, 1))
+    db_session.flush()
+
+    response = client.get("/podcasts", params={"q": q}, headers=auth_headers)
+
+    assert _titles(response.json()) == expected
+
+
 def test_list_rejects_invalid_pagination_with_error_envelope(
     client: TestClient, auth_headers: dict[str, str]
 ) -> None:
