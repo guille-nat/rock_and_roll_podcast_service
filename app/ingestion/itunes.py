@@ -6,7 +6,7 @@ Both expose the same two calls so the ingestion code does not care which one it 
 import json
 import logging
 from pathlib import Path
-from typing import Any, Protocol, Self
+from typing import Any, Protocol
 
 import httpx
 from tenacity import (
@@ -20,6 +20,9 @@ from app.config import Settings
 from app.errors import UpstreamError
 
 logger = logging.getLogger(__name__)
+
+ITUNES_BASE_URL = "https://itunes.apple.com"
+FIXTURES_DIR = Path(__file__).resolve().parents[2] / "tests" / "fixtures" / "itunes"
 
 RawPodcast = dict[str, Any]
 
@@ -51,12 +54,6 @@ class ITunesClient:
         transport: httpx.BaseTransport | None = None,
     ) -> None:
         self._client = httpx.Client(base_url=base_url, timeout=timeout, transport=transport)
-
-    def __enter__(self) -> Self:
-        return self
-
-    def __exit__(self, *exc_info: object) -> None:
-        self.close()
 
     def close(self) -> None:
         self._client.close()
@@ -142,5 +139,5 @@ def _results(data: Any) -> list[RawPodcast]:
 def open_source(settings: Settings) -> PodcastSource:
     """Build the source selected by INGEST_SOURCE. The caller closes an ITunesClient."""
     if settings.ingest_source == "fixtures":
-        return FixtureSource(settings.fixtures_dir)
-    return ITunesClient(settings.itunes_base_url, settings.itunes_timeout_seconds)
+        return FixtureSource(FIXTURES_DIR)
+    return ITunesClient(ITUNES_BASE_URL, settings.itunes_timeout_seconds)

@@ -1,4 +1,5 @@
 import json
+from contextlib import closing
 from pathlib import Path
 
 import httpx
@@ -30,7 +31,7 @@ def test_search_returns_results_and_sends_expected_params() -> None:
         seen.append(request)
         return httpx.Response(200, json={"resultCount": 1, "results": [{"collectionId": 1}]})
 
-    with _client(httpx.MockTransport(handler)) as client:
+    with closing(_client(httpx.MockTransport(handler))) as client:
         assert client.search("punk rock") == [{"collectionId": 1}]
 
     params = seen[0].url.params
@@ -45,7 +46,7 @@ def test_server_errors_are_retried_then_succeed() -> None:
         body = {"resultCount": 0, "results": []} if status == 200 else {}
         return httpx.Response(status, json=body)
 
-    with _client(httpx.MockTransport(handler)) as client:
+    with closing(_client(httpx.MockTransport(handler))) as client:
         assert client.search("rock") == []
 
 
@@ -57,7 +58,7 @@ def test_client_errors_are_not_retried() -> None:
         calls += 1
         return httpx.Response(400, json={})
 
-    with _client(httpx.MockTransport(handler)) as client:
+    with closing(_client(httpx.MockTransport(handler))) as client:
         with pytest.raises(UpstreamError, match="400"):
             client.search("rock")
     assert calls == 1
@@ -71,7 +72,7 @@ def test_persistent_timeouts_become_upstream_error() -> None:
         calls += 1
         raise httpx.ReadTimeout("slow", request=request)
 
-    with _client(httpx.MockTransport(handler)) as client:
+    with closing(_client(httpx.MockTransport(handler))) as client:
         with pytest.raises(UpstreamError, match="after retries"):
             client.search("rock")
     assert calls == 3
@@ -80,7 +81,7 @@ def test_persistent_timeouts_become_upstream_error() -> None:
 def test_non_json_body_is_upstream_error() -> None:
     transport = httpx.MockTransport(lambda request: httpx.Response(200, text="<html>"))
 
-    with _client(transport) as client:
+    with closing(_client(transport)) as client:
         with pytest.raises(UpstreamError, match="not JSON"):
             client.search("rock")
 
@@ -90,7 +91,7 @@ def test_lookup_returns_none_when_unknown() -> None:
         lambda request: httpx.Response(200, json={"resultCount": 0, "results": []})
     )
 
-    with _client(transport) as client:
+    with closing(_client(transport)) as client:
         assert client.lookup(42) is None
 
 

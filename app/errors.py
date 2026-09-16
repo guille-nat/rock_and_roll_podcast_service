@@ -21,8 +21,8 @@ logger = logging.getLogger(__name__)
 class ApiError(Exception):
     """Base class for errors that map directly to an HTTP response."""
 
-    status_code: int = status.HTTP_500_INTERNAL_SERVER_ERROR
-    code: str = "internal_error"
+    status_code: int
+    code: str
 
     def __init__(self, message: str) -> None:
         super().__init__(message)
@@ -48,7 +48,6 @@ class UpstreamError(ApiError):
 
 # Codes for errors raised by the framework itself (unknown route, wrong method, ...).
 _HTTP_STATUS_CODES: dict[int, str] = {
-    status.HTTP_401_UNAUTHORIZED: "unauthenticated",
     status.HTTP_404_NOT_FOUND: "not_found",
     status.HTTP_405_METHOD_NOT_ALLOWED: "method_not_allowed",
 }
