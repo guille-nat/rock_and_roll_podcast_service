@@ -101,8 +101,7 @@ async def _handle_unexpected_error(request: Request, exc: Exception) -> JSONResp
 
 
 def register_exception_handlers(app: FastAPI) -> None:
-    # Starlette types every handler as taking a bare `Exception`, although it only ever
-    # dispatches the registered class, so the narrower signatures need an ignore.
+    # Starlette types the handler argument as Exception rather than the registered subclass.
     app.add_exception_handler(ApiError, _handle_api_error)  # type: ignore[arg-type]
     app.add_exception_handler(RequestValidationError, _handle_validation_error)  # type: ignore[arg-type]
     app.add_exception_handler(StarletteHTTPException, _handle_http_exception)  # type: ignore[arg-type]

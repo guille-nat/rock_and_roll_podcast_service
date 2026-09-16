@@ -102,6 +102,12 @@ A single `podcasts` table (`app/models.py`), managed only through Alembic migrat
 - Each test runs inside a transaction that is rolled back, with savepoints so tests can
   commit or trigger integrity errors without affecting each other.
 - `alembic check` is itself a test: a model change without its migration fails the suite.
+- **Known limitation of the export tests.** The HTTP test for `/podcasts/export` overrides
+  the session factory with `nullcontext(db_session)` so it runs inside the rolled-back test
+  transaction. That means it does not exercise the real `SessionLocal` lifecycle inside the
+  streaming generator. The requirement that the session outlives the generator is covered
+  by the unit test that iterates 2500 rows and checks the identity map holds at most one
+  batch, not by the HTTP test.
 
 ## Authentication
 
@@ -121,6 +127,10 @@ A single static API key in the `X-API-Key` header, read from `API_KEY` at startu
   service's own 401 instead of FastAPI's default 403.
 - **Enforced per router**, not as middleware, so `/health` stays public by simply not
   declaring the dependency and the requirement is visible in each router's definition.
+- **`/docs`, `/redoc` and `/openapi.json` are public on purpose.** A reviewer should be able
+  to open the API documentation and see every endpoint and schema without a key; the
+  Authorize button is where the key goes to actually call them. In a deployment with real
+  consumers I would put the same dependency on the docs routes or serve them only internally.
 - **An empty key is rejected at startup** (`min_length=1` on the setting); otherwise a
   request with an empty header would authenticate.
 - **Known limitations.** Rotating the key requires a redeploy, and there is no per-client
