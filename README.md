@@ -25,16 +25,16 @@ Copy the example file and set a value for `API_KEY`; everything else has a worki
 cp .env.example .env
 ```
 
-| variable        | required | description                                                                 |
-| --------------- | -------- | --------------------------------------------------------------------------- |
-| `API_KEY`       | yes      | Shared secret expected in the `X-API-Key` header.                           |
-| `DATABASE_URL`  | outside Docker | SQLAlchemy URL, e.g. `postgresql+psycopg://user:pass@host:5432/db`. The Compose `api` service sets its own. |
-| `API_PORT`      | no       | Host port published by the Compose `api` service (default `8000`).          |
-| `POSTGRES_PORT` | no       | Host port published by the Compose `db` service (default `5432`). Keep it in sync with `DATABASE_URL`. |
-| `INGEST_SOURCE` | no       | `itunes` (default) or `fixtures`. See [Run the ingestion](#run-the-ingestion).   |
-| `ITUNES_TIMEOUT_SECONDS` | no | Per-request timeout against iTunes (default `10`).                        |
-| `ARTWORK_WORKERS` | no     | Concurrent artwork downloads (default `8`).                                 |
-| `ARTWORK_TIMEOUT_SECONDS` | no | Per-image download timeout (default `5`).                                |
+| variable                  | required       | description                                                                                                 |
+| ------------------------- | -------------- | ----------------------------------------------------------------------------------------------------------- |
+| `API_KEY`                 | yes            | Shared secret expected in the `X-API-Key` header.                                                           |
+| `DATABASE_URL`            | outside Docker | SQLAlchemy URL, e.g. `postgresql+psycopg://user:pass@host:5432/db`. The Compose `api` service sets its own. |
+| `API_PORT`                | no             | Host port published by the Compose `api` service (default `8000`).                                          |
+| `POSTGRES_PORT`           | no             | Host port published by the Compose `db` service (default `5432`). Keep it in sync with `DATABASE_URL`.      |
+| `INGEST_SOURCE`           | no             | `itunes` (default) or `fixtures`. See [Run the ingestion](#run-the-ingestion).                              |
+| `ITUNES_TIMEOUT_SECONDS`  | no             | Per-request timeout against iTunes (default `10`).                                                          |
+| `ARTWORK_WORKERS`         | no             | Concurrent artwork downloads (default `8`).                                                                 |
+| `ARTWORK_TIMEOUT_SECONDS` | no             | Per-image download timeout (default `5`).                                                                   |
 
 The service refuses to start if `API_KEY` or `DATABASE_URL` is missing or empty.
 
@@ -71,9 +71,12 @@ whatever `POSTGRES_PORT` is). If port 8000 is taken, pass `--port 8010` to uvico
 ## Authentication
 
 Every endpoint except `/health` requires the `X-API-Key` header with the value of `API_KEY`.
-A missing or wrong key returns `401`:
+A missing or wrong key returns `401`. Copying `.env.example` does not export anything to
+your shell, so put the key in a variable first or the examples below send an empty header:
 
 ```sh
+export API_KEY=...   # the value from .env (fish: set -x API_KEY ...)
+
 curl -i http://localhost:8000/podcasts
 # HTTP/1.1 401 Unauthorized
 # {"error":{"code":"unauthenticated","message":"Missing or invalid API key"}}
@@ -85,30 +88,35 @@ In `/docs`, click **Authorize** and paste the key once to try every endpoint fro
 
 ## Endpoints
 
-| method | path                   | auth | description                                              |
-| ------ | ---------------------- | ---- | -------------------------------------------------------- |
-| `GET`  | `/health`              | no   | Liveness check.                                          |
-| `POST` | `/ingest/bulk`         | yes  | Fetch the rock & roll batch from iTunes and store it.    |
-| `POST` | `/ingest/{source_id}`  | yes  | Ingest one podcast by its iTunes `collectionId`.         |
-| `GET`  | `/podcasts`            | yes  | Paginated catalogue listing with filters.                |
-| `GET`  | `/podcasts/export`     | yes  | Stream the whole catalogue as NDJSON.                    |
-| `GET`  | `/podcasts/{id}`       | yes  | One podcast by its own `id` (not the iTunes id).         |
+| method | path                  | auth | description                                           |
+| ------ | --------------------- | ---- | ----------------------------------------------------- |
+| `GET`  | `/health`             | no   | Liveness check.                                       |
+| `POST` | `/ingest/bulk`        | yes  | Fetch the rock & roll batch from iTunes and store it. |
+| `POST` | `/ingest/{source_id}` | yes  | Ingest one podcast by its iTunes `collectionId`.      |
+| `GET`  | `/podcasts`           | yes  | Paginated catalogue listing with filters.             |
+| `GET`  | `/podcasts/export`    | yes  | Stream the whole catalogue as NDJSON.                 |
+| `GET`  | `/podcasts/{id}`      | yes  | One podcast by its own `id` (not the iTunes id).      |
 
 `GET /podcasts` query parameters:
 
-| parameter | type   | default | description                                                    |
-| --------- | ------ | ------- | -------------------------------------------------------------- |
-| `genre`   | string | –       | Exact match, case-insensitive (e.g. `music`).                  |
+| parameter | type   | default | description                                                                                                                          |
+| --------- | ------ | ------- | ------------------------------------------------------------------------------------------------------------------------------------ |
+| `genre`   | string | –       | Exact match, case-insensitive (e.g. `music`).                                                                                        |
 | `country` | string | –       | Exact match, case-insensitive (e.g. `usa`). The bulk ingestion queries the US storefront only, so every podcast currently has `USA`. |
-| `q`       | string | –       | Case-insensitive substring search over `title` and `author`.   |
-| `limit`   | int    | `20`    | Page size, between 1 and 100.                                  |
-| `offset`  | int    | `0`     | Number of rows to skip.                                        |
+| `q`       | string | –       | Case-insensitive substring search over `title` and `author`.                                                                         |
+| `limit`   | int    | `20`    | Page size, between 1 and 100.                                                                                                        |
+| `offset`  | int    | `0`     | Number of rows to skip.                                                                                                              |
 
 The response carries the page plus the total number of matches, so clients can compute the
 number of pages:
 
 ```json
-{ "items": [ { "id": 1, "source_id": 1001, "title": "...", "...": "..." } ], "total": 3, "limit": 20, "offset": 0 }
+{
+  "items": [{ "id": 1, "source_id": 1001, "title": "...", "...": "..." }],
+  "total": 3,
+  "limit": 20,
+  "offset": 0
+}
 ```
 
 Results are ordered by `title`, then `id`, so pages are stable between requests.
@@ -126,7 +134,7 @@ curl -H "X-API-Key: $API_KEY" http://localhost:8000/podcasts/export -o podcasts.
 
 ```jsonl
 {"id":1,"source_id":1001,"title":"Rock History Weekly","author":"Jane Doe","description":null,"genre":"Music","country":"USA","feed_url":"https://example.com/rock.xml","artwork_url":"https://example.com/rock.jpg","color_palette":["#1a1a1a","#c0392b","#f5f5f5"],"created_at":"2026-09-15T12:32:55.214545Z","updated_at":"2026-09-15T12:32:55.214545Z"}
-{"id":2,"source_id":1002,"title":"Punk & Roll","author":"John Smith","description":null,"genre":"Music","country":"GBR","feed_url":null,"artwork_url":null,"color_palette":null,"created_at":"2026-09-15T12:32:55.214545Z","updated_at":"2026-09-15T12:32:55.214545Z"}
+{"id":2,"source_id":1002,"title":"Punk & Roll","author":"John Smith","description":null,"genre":"Music","country":"USA","feed_url":null,"artwork_url":null,"color_palette":null,"created_at":"2026-09-15T12:32:55.214545Z","updated_at":"2026-09-15T12:32:55.214545Z"}
 ```
 
 Each line has the same fields as `GET /podcasts/{id}`. An empty catalogue produces an empty
@@ -149,10 +157,10 @@ the second. It returns a summary:
 ```json
 {
   "fetched": 527,
-  "stored": 492,
+  "stored": 490,
   "updated": 0,
-  "skipped": 35,
-  "skipped_reasons": { "duplicate": 35 }
+  "skipped": 37,
+  "skipped_reasons": { "duplicate": 37 }
 }
 ```
 
@@ -192,14 +200,14 @@ Every error response, whatever raised it, has the same shape:
 { "error": { "code": "not_found", "message": "Podcast 999 not found" } }
 ```
 
-| status | code               | when                                             |
-| ------ | ------------------ | ------------------------------------------------ |
-| `401`  | `unauthenticated`  | Missing or wrong `X-API-Key`.                    |
-| `404`  | `not_found`        | Unknown podcast id or unknown route.             |
-| `405`  | `method_not_allowed` | Wrong HTTP method on an existing route.        |
-| `422`  | `validation_error` | Invalid query/path parameter or body. `error.details` lists the offending fields. |
-| `502`  | `upstream_error`   | The iTunes API failed during ingestion (after retries). |
-| `500`  | `internal_error`   | Unexpected failure; details are only in the server log. |
+| status | code                 | when                                                                              |
+| ------ | -------------------- | --------------------------------------------------------------------------------- |
+| `401`  | `unauthenticated`    | Missing or wrong `X-API-Key`.                                                     |
+| `404`  | `not_found`          | Unknown podcast id or unknown route.                                              |
+| `405`  | `method_not_allowed` | Wrong HTTP method on an existing route.                                           |
+| `422`  | `validation_error`   | Invalid query/path parameter or body. `error.details` lists the offending fields. |
+| `502`  | `upstream_error`     | The iTunes API failed during ingestion (after retries).                           |
+| `500`  | `internal_error`     | Unexpected failure; details are only in the server log.                           |
 
 ## Run the tests
 
