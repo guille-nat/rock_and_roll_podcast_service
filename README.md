@@ -178,6 +178,7 @@ Every error response, whatever raised it, has the same shape:
 | `405`  | `method_not_allowed` | Wrong HTTP method on an existing route.        |
 | `422`  | `validation_error` | Invalid query/path parameter or body. `error.details` lists the offending fields. |
 | `502`  | `upstream_error`   | The iTunes API failed during ingestion (after retries). |
+| `500`  | `internal_error`   | Unexpected failure; details are only in the server log. |
 
 ## Run the tests
 

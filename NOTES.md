@@ -89,7 +89,7 @@ A single static API key in the `X-API-Key` header, read from `API_KEY` at startu
 
 ## Errors
 
-One envelope for every error response, produced by three handlers in `app/errors.py`:
+One envelope for every error response, produced by four handlers in `app/errors.py`:
 
 - `ApiError` subclasses (`UnauthenticatedError`, `NotFoundError`, `UpstreamError`) carry
   their status and code as class attributes, so raising one from the business logic is a
@@ -99,6 +99,9 @@ One envelope for every error response, produced by three handlers in `app/errors
   fields, and the field/location information is what a client needs to fix the request.
 - Starlette's `HTTPException` is handled too, so an unknown route or a wrong method also
   returns the envelope instead of FastAPI's default `{"detail": ...}`.
+- Anything else (a database outage, a bug) is caught by a handler on `Exception`: the
+  traceback goes to the server log and the client gets `500 internal_error` with a fixed
+  message, so no connection string or stack frame ever leaks into a response body.
 - The handlers are `async def` on purpose. Starlette invokes them from inside the event loop;
   a plain `def` handler would be pushed to the thread pool, and building a small JSON body
   does not justify a thread hop. Endpoints are the opposite case: they run synchronous

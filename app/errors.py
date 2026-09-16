@@ -4,6 +4,7 @@ Every error leaves the service as ``{"error": {"code": ..., "message": ...}}``,
 whether it was raised by our code, by request validation or by the framework itself.
 """
 
+import logging
 from collections.abc import Mapping
 from typing import Any
 
@@ -13,6 +14,8 @@ from fastapi.responses import JSONResponse
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from app.schemas import ErrorBody, ErrorResponse
+
+logger = logging.getLogger(__name__)
 
 
 class ApiError(Exception):
@@ -90,9 +93,18 @@ async def _handle_http_exception(
     return _error_response(exc.status_code, code, str(exc.detail), headers=exc.headers)
 
 
+async def _handle_unexpected_error(request: Request, exc: Exception) -> JSONResponse:
+    # The traceback stays server-side; the body must not leak internals.
+    logger.exception("Unhandled error on %s %s", request.method, request.url.path)
+    return _error_response(
+        status.HTTP_500_INTERNAL_SERVER_ERROR, "internal_error", "Internal server error"
+    )
+
+
 def register_exception_handlers(app: FastAPI) -> None:
     # Starlette types every handler as taking a bare `Exception`, although it only ever
     # dispatches the registered class, so the narrower signatures need an ignore.
     app.add_exception_handler(ApiError, _handle_api_error)  # type: ignore[arg-type]
     app.add_exception_handler(RequestValidationError, _handle_validation_error)  # type: ignore[arg-type]
     app.add_exception_handler(StarletteHTTPException, _handle_http_exception)  # type: ignore[arg-type]
+    app.add_exception_handler(Exception, _handle_unexpected_error)
