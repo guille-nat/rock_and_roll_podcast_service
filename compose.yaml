@@ -1,5 +1,25 @@
 # Local development only: the credentials below are not secrets.
 services:
+  api:
+    build: .
+    ports:
+      # Override API_PORT in .env if 8000 is already taken on the host.
+      - "${API_PORT:-8000}:8000"
+    env_file:
+      # API_KEY and the optional ingestion settings come from here.
+      - path: .env
+        required: false
+    environment:
+      # Fail early with a clear message instead of a startup crash inside the container.
+      API_KEY: ${API_KEY:?API_KEY is not set. Copy .env.example to .env and fill it in.}
+      # Inside the Compose network the database is reached by service name, not localhost.
+      DATABASE_URL: postgresql+psycopg://podcasts:podcasts@db:5432/podcasts
+    depends_on:
+      db:
+        condition: service_healthy
+    # Migrations run on every start; alembic is a no-op when the schema is current.
+    command: sh -c "alembic upgrade head && exec uvicorn app.main:app --host 0.0.0.0 --port 8000"
+
   db:
     image: postgres:18
     environment:
