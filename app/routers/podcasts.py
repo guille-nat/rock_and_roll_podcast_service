@@ -5,6 +5,7 @@ from typing import Annotated
 
 from fastapi import APIRouter, Depends, Query
 from fastapi.responses import StreamingResponse
+from pydantic import AfterValidator
 from sqlalchemy.orm import Session
 
 from app import catalogue
@@ -21,10 +22,25 @@ router = APIRouter(
 )
 
 
+def _stripped_search_term(value: str | None) -> str | None:
+    # Surrounding whitespace would otherwise become part of the ILIKE pattern, and a
+    # blank value would match everything; both are the client's mistake, so 422.
+    if value is None:
+        return None
+    value = value.strip()
+    if not value:
+        raise ValueError("must not be blank")
+    return value
+
+
 def podcast_filters(
     genre: Annotated[str | None, Query(description="Exact genre, case-insensitive")] = None,
     country: Annotated[str | None, Query(description="Exact country, case-insensitive")] = None,
-    q: Annotated[str | None, Query(min_length=1, description="Search in title and author")] = None,
+    q: Annotated[
+        str | None,
+        Query(description="Search in title and author"),
+        AfterValidator(_stripped_search_term),
+    ] = None,
     limit: Annotated[int, Query(ge=1, le=100)] = 20,
     offset: Annotated[int, Query(ge=0)] = 0,
 ) -> PodcastFilters:

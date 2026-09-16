@@ -79,6 +79,23 @@ def test_list_search_treats_like_wildcards_literally(
     assert _titles(response.json()) == expected
 
 
+def test_list_search_ignores_surrounding_whitespace(
+    client: TestClient, auth_headers: dict[str, str], catalogue: list[Podcast]
+) -> None:
+    padded = client.get("/podcasts", params={"q": "  beatle "}, headers=auth_headers).json()
+    plain = client.get("/podcasts", params={"q": "beatle"}, headers=auth_headers).json()
+
+    assert _titles(padded) == _titles(plain) == ["Beatles Stories", "Metal Talk"]
+
+
+@pytest.mark.parametrize("q", ["", "   "])
+def test_list_rejects_blank_search(client: TestClient, auth_headers: dict[str, str], q: str) -> None:
+    response = client.get("/podcasts", params={"q": q}, headers=auth_headers)
+
+    assert response.status_code == 422
+    assert response.json()["error"]["details"][0]["loc"] == ["query", "q"]
+
+
 def test_list_rejects_invalid_pagination_with_error_envelope(
     client: TestClient, auth_headers: dict[str, str]
 ) -> None:

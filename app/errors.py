@@ -9,6 +9,7 @@ from collections.abc import Mapping
 from typing import Any
 
 from fastapi import FastAPI, Request, status
+from fastapi.encoders import jsonable_encoder
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 from starlette.exceptions import HTTPException as StarletteHTTPException
@@ -76,12 +77,13 @@ async def _handle_validation_error(
     request: Request, exc: RequestValidationError
 ) -> JSONResponse:
     # A single message cannot describe several invalid fields, so the Pydantic error
-    # list travels alongside it. Its entries are JSON-serialisable already.
+    # list travels alongside it. A value_error carries the raising exception in ctx,
+    # so the list goes through jsonable_encoder like FastAPI's own handler does.
     return _error_response(
         status.HTTP_422_UNPROCESSABLE_CONTENT,
         "validation_error",
         "Invalid request",
-        details=list(exc.errors()),
+        details=jsonable_encoder(exc.errors()),
     )
 
 
