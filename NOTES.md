@@ -257,7 +257,8 @@ Flow: fetch across terms → validate and normalise each record → de-duplicate
 `app/ingestion/artwork.py`.
 
 - **Threads, not a queue.** Downloads are I/O-bound and short; a `ThreadPoolExecutor` with 8
-  workers and a 5-second per-image timeout finishes ~500 covers in about 10 seconds. Celery
+  workers and a 5-second per-image timeout fetched 490 covers as part of a 2.6-second bulk
+  run, measured once on one machine against Apple's CDN. Celery
   or a task queue would add infrastructure for no gain at this scope (and the brief excludes them).
 - **One shared `httpx.Client`** across the threads: it is thread-safe and reuses connections
   to Apple's CDN, which is where most of the time goes. Duplicate URLs are downloaded once.
@@ -316,7 +317,7 @@ reduced to `uvicorn`.
 ## Continuous ingestion and scale
 
 Today ingestion is synchronous inside the HTTP request: `POST /ingest/bulk` fetches, upserts,
-downloads ~500 covers and answers in about fifteen seconds. That is fine for a catalogue
+downloads ~500 covers and answers in a few seconds (2.6 s measured). That is fine for a catalogue
 this size and makes the endpoint easy to test, but it is the first thing that has to go.
 
 To ingest continuously I would move the pipeline out of the request path into a worker.
