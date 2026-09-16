@@ -108,19 +108,13 @@ def ingest_records(
     """Validate, upsert and (optionally) colour-profile a list of raw iTunes records."""
     skipped: Counter[str] = Counter()
 
-    # De-duplicate in memory first: the same podcast shows up under several search terms.
-    unique: dict[object, RawPodcast] = {}
+    # Normalise first, then de-duplicate on the coerced source_id: the same podcast shows
+    # up under several search terms, and 123 and "123" must collapse into one row or the
+    # multi-row INSERT fails with "command cannot affect row a second time".
+    unique: dict[int, PodcastIn] = {}
     for raw in raw_records:
-        key = raw.get("collectionId")
-        if key is not None and key in unique:
-            skipped["duplicate"] += 1
-        else:
-            unique.setdefault(key if key is not None else object(), raw)
-
-    records: list[PodcastIn] = []
-    for raw in unique.values():
         try:
-            records.append(PodcastIn.from_itunes(raw))
+            record = PodcastIn.from_itunes(raw)
         except ValidationError as exc:
             reason = skip_reason(exc)
             skipped[reason] += 1
@@ -128,7 +122,13 @@ def ingest_records(
             logger.warning(
                 "Skipping record collectionId=%r (%s)", raw.get("collectionId"), reason
             )
+            continue
+        if record.source_id in unique:
+            skipped["duplicate"] += 1
+        else:
+            unique[record.source_id] = record
 
+    records = list(unique.values())
     stored, updated = upsert_podcasts(session, records)
     session.commit()
 

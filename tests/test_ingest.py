@@ -81,6 +81,14 @@ def test_duplicates_within_a_batch_are_counted_once(db_session: Session) -> None
     assert summary.fetched == summary.stored + summary.updated + summary.skipped
 
 
+def test_numeric_string_and_int_source_ids_are_the_same_podcast(db_session: Session) -> None:
+    summary = ingest_records(db_session, [_raw(1, title="Int"), _raw(1, collectionId="1")])
+
+    assert (summary.stored, summary.skipped) == (1, 1)
+    assert summary.skipped_reasons == {"duplicate": 1}
+    assert db_session.scalars(select(Podcast.title)).all() == ["Int"]
+
+
 def test_bulk_ingests_fixtures_across_all_terms(db_session: Session) -> None:
     summary = ingest_bulk(db_session, FixtureSource(FIXTURES))
 
