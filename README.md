@@ -4,19 +4,20 @@ REST API for a catalogue of rock & roll podcasts ingested from the iTunes Search
 
 ## Prerequisites
 
-- [uv](https://docs.astral.sh/uv/) — manages the Python interpreter, dependencies and
-  virtual environment. Install it with:
+- [Docker](https://docs.docker.com/get-docker/) with Compose. This is all you need to run
+  the service.
+- [uv](https://docs.astral.sh/uv/), only to run the API outside Docker, the tests or the
+  type checker. It manages the Python interpreter, dependencies and virtual environment:
 
   ```sh
   curl -LsSf https://astral.sh/uv/install.sh | sh
   ```
 
   uv downloads the pinned Python version (see `.python-version`) automatically.
-- [Docker](https://docs.docker.com/get-docker/) with Compose, to run PostgreSQL locally.
 
 ## Environment variables
 
-Copy the example file and fill in the values:
+Copy the example file and set a value for `API_KEY`; everything else has a working default:
 
 ```sh
 cp .env.example .env
@@ -25,8 +26,9 @@ cp .env.example .env
 | variable        | required | description                                                                 |
 | --------------- | -------- | --------------------------------------------------------------------------- |
 | `API_KEY`       | yes      | Shared secret expected in the `X-API-Key` header.                           |
-| `DATABASE_URL`  | yes      | SQLAlchemy URL, e.g. `postgresql+psycopg://user:pass@host:5432/db`.         |
-| `POSTGRES_PORT` | no       | Host port published by the Compose database (default `5432`). Keep it in sync with `DATABASE_URL`. |
+| `DATABASE_URL`  | outside Docker | SQLAlchemy URL, e.g. `postgresql+psycopg://user:pass@host:5432/db`. The Compose `api` service sets its own. |
+| `API_PORT`      | no       | Host port published by the Compose `api` service (default `8000`).          |
+| `POSTGRES_PORT` | no       | Host port published by the Compose `db` service (default `5432`). Keep it in sync with `DATABASE_URL`. |
 | `INGEST_SOURCE` | no       | `itunes` (default) or `fixtures`. See [Run the ingestion](#run-the-ingestion).   |
 | `ITUNES_TIMEOUT_SECONDS` | no | Per-request timeout against iTunes (default `10`).                        |
 | `ARTWORK_WORKERS` | no     | Concurrent artwork downloads (default `8`).                                 |
@@ -34,41 +36,35 @@ cp .env.example .env
 
 The service refuses to start if `API_KEY` or `DATABASE_URL` is missing or empty.
 
-## Install dependencies
+## Run with Docker Compose
 
 ```sh
-uv sync
+docker compose up --build
 ```
 
-## Start the database
-
-```sh
-docker compose up -d --wait db
-```
-
-This starts PostgreSQL 18 with the credentials from `.env.example` (local development only)
-and creates two databases on first start: `podcasts` for the API and `podcasts_test` for the
-test suite. If port 5432 is already in use on your machine, set `POSTGRES_PORT` in `.env` and
-use the same port in `DATABASE_URL`.
-
-## Apply migrations
-
-The schema is managed with Alembic; the application never creates tables by itself.
-
-```sh
-uv run alembic upgrade head
-```
-
-## Run the API
-
-```sh
-uv run uvicorn app.main:app --reload
-```
+This builds the API image, starts PostgreSQL 18, waits for it to be healthy, applies the
+migrations and starts the API. Compose stops with a clear message if `API_KEY` is not set.
 
 - Health check: <http://localhost:8000/health>
 - OpenAPI docs: <http://localhost:8000/docs>
 
-If port 8000 is taken, pass `--port 8010` (or any free port) to uvicorn.
+If port 8000 or 5432 is already in use on your machine, set `API_PORT` or `POSTGRES_PORT` in
+`.env`. Stop everything with `docker compose down` (add `-v` to also drop the database).
+
+## Run locally with uv
+
+Alternative to the section above, useful while developing. It uses the Compose database
+and runs the API from the source tree with auto-reload.
+
+```sh
+docker compose up -d --wait db   # PostgreSQL only
+uv sync                          # dependencies into .venv
+uv run alembic upgrade head      # schema (the app never creates tables by itself)
+uv run uvicorn app.main:app --reload
+```
+
+`DATABASE_URL` in `.env` must point to the published port (`localhost:5432` by default, or
+whatever `POSTGRES_PORT` is). If port 8000 is taken, pass `--port 8010` to uvicorn.
 
 ## Authentication
 
@@ -93,6 +89,7 @@ In `/docs`, click **Authorize** and paste the key once to try every endpoint fro
 | `POST` | `/ingest/bulk`         | yes  | Fetch the rock & roll batch from iTunes and store it.    |
 | `POST` | `/ingest/{source_id}`  | yes  | Ingest one podcast by its iTunes `collectionId`.         |
 | `GET`  | `/podcasts`            | yes  | Paginated catalogue listing with filters.                |
+| `GET`  | `/podcasts/export`     | yes  | Stream the whole catalogue as NDJSON.                    |
 | `GET`  | `/podcasts/{id}`       | yes  | One podcast by its own `id` (not the iTunes id).         |
 
 `GET /podcasts` query parameters:
@@ -113,6 +110,25 @@ number of pages:
 ```
 
 Results are ordered by `title`, then `id`, so pages are stable between requests.
+
+### Export
+
+`GET /podcasts/export` streams every podcast, one JSON object per line
+(`application/x-ndjson`), ordered by `id`. Rows are read through a server-side cursor in
+batches, so the response starts immediately and memory use does not grow with the size of
+the catalogue.
+
+```sh
+curl -H "X-API-Key: $API_KEY" http://localhost:8000/podcasts/export -o podcasts.ndjson
+```
+
+```jsonl
+{"id":1,"source_id":1001,"title":"Rock History Weekly","author":"Jane Doe","description":null,"genre":"Music","country":"USA","feed_url":"https://example.com/rock.xml","artwork_url":"https://example.com/rock.jpg","color_palette":["#1a1a1a","#c0392b","#f5f5f5"],"created_at":"2026-09-15T12:32:55.214545Z","updated_at":"2026-09-15T12:32:55.214545Z"}
+{"id":2,"source_id":1002,"title":"Punk & Roll","author":"John Smith","description":null,"genre":"Music","country":"GBR","feed_url":null,"artwork_url":null,"color_palette":null,"created_at":"2026-09-15T12:32:55.214545Z","updated_at":"2026-09-15T12:32:55.214545Z"}
+```
+
+Each line has the same fields as `GET /podcasts/{id}`. An empty catalogue produces an empty
+body. Tools such as `jq -c` or `head -n` work on the output line by line.
 
 ## Run the ingestion
 
@@ -182,11 +198,13 @@ Every error response, whatever raised it, has the same shape:
 
 ## Run the tests
 
-The tests need the Compose database running. They use the same server as `DATABASE_URL`
-but the `podcasts_test` database, which they migrate up before the run and back down
-afterwards, so development data is never touched.
+The tests need the Compose database running (`docker compose up -d --wait db`). They use
+the same server as `DATABASE_URL` but the `podcasts_test` database, which they migrate up
+before the run and back down afterwards, so development data is never touched. Nothing in
+the suite touches the network.
 
 ```sh
+uv sync
 uv run pytest
 ```
 
