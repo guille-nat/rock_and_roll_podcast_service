@@ -109,6 +109,19 @@ def test_palettes_are_stored_per_podcast(db_session: Session) -> None:
     assert rows == {1: ["#000000"], 2: None, 3: None}
 
 
+def test_failed_palette_on_reingest_keeps_the_previous_palette(db_session: Session) -> None:
+    def good(urls: Iterable[str]) -> dict[str, list[str] | None]:
+        return dict.fromkeys(urls, ["#123456"])
+
+    def failing(urls: Iterable[str]) -> dict[str, list[str] | None]:
+        return dict.fromkeys(urls)
+
+    ingest_records(db_session, [_raw(1)], good)
+    ingest_records(db_session, [_raw(1)], failing)
+
+    assert db_session.scalars(select(Podcast.color_palette)).one() == ["#123456"]
+
+
 def test_ingest_one_stores_a_single_podcast(db_session: Session) -> None:
     source = FixtureSource(FIXTURES)
     source_id = source.search("rock")[0]["collectionId"]

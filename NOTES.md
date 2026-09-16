@@ -208,6 +208,12 @@ each record → upsert in batches → download artwork and extract palettes → 
 - **Known limitation:** median-cut on a cover dominated by one colour returns near-identical
   shades (e.g. `#fbf81f`, `#fbf81d`, `#fcfa2c`). Merging perceptually close colours would
   give a nicer palette; it is cosmetic and left as an improvement.
+- **A failed download never erases a stored palette.** The upsert does not touch
+  `color_palette`, and `store_palettes` writes only the URLs that were extracted
+  successfully. A new podcast whose cover fails is stored with `NULL`, as the brief requires;
+  a podcast that already had a palette keeps it through a transient network error on
+  re-ingestion. The alternative (overwrite with `NULL`) would report the data as missing when
+  it was only momentarily unreachable.
 - **Artwork is re-downloaded on every ingestion**, even when the URL has not changed. Skipping
   unchanged URLs whose palette is already stored would make re-runs almost free; it needs
   the previous `artwork_url` from the upsert's `RETURNING` and is a straightforward next step.

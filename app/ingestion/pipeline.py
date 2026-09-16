@@ -68,8 +68,7 @@ def upsert_podcasts(session: Session, records: list[PodcastIn]) -> tuple[int, in
                 # onupdate does not fire for ON CONFLICT updates, so set it explicitly.
                 "updated_at": func.clock_timestamp(),
             },
-            # color_palette is deliberately not overwritten here: the previous palette
-            # stays until the new download succeeds.
+            # color_palette is deliberately not touched here; see store_palettes.
         )
         # PostgreSQL sets xmax to 0 on a freshly inserted row and to the deleting/updating
         # transaction id otherwise, which tells inserts and updates apart in one statement.
@@ -84,8 +83,13 @@ def upsert_podcasts(session: Session, records: list[PodcastIn]) -> tuple[int, in
     return inserted, updated
 
 
-def store_palettes(session: Session, palettes: dict[int, list[str] | None]) -> None:
-    """Write the extracted palettes, keyed by source_id, in one executemany UPDATE."""
+def store_palettes(session: Session, palettes: dict[int, list[str]]) -> None:
+    """Write the extracted palettes, keyed by source_id, in one executemany UPDATE.
+
+    Only successful extractions are written: a failed download leaves whatever palette
+    the row already had (NULL for a new podcast), so a transient network error during a
+    re-ingestion never erases a palette that was extracted before.
+    """
     if not palettes:
         return
     stmt = (
@@ -137,7 +141,11 @@ def ingest_records(
         palettes_by_url = extract_palettes({r.artwork_url for r in with_artwork if r.artwork_url})
         store_palettes(
             session,
-            {r.source_id: palettes_by_url.get(r.artwork_url or "") for r in with_artwork},
+            {
+                r.source_id: palette
+                for r in with_artwork
+                if (palette := palettes_by_url.get(r.artwork_url or "")) is not None
+            },
         )
         session.commit()
 
